@@ -6,7 +6,6 @@ from matplotlib.widgets import Slider
 
 
 
-
 def smoothed_relu(z, sigma):
     """
     Smooth approximation of ReLU using Gaussian mollifier.
@@ -49,7 +48,7 @@ def mollified_relu_simplex_core(x, sigma):
     neg_part = smoothed_relu(-x, sigma).sum(dim=1)
 
     # Sum constraint penalty
-    sum_constraint = torch.sum(x) - 1  # penalize when > 1
+    sum_constraint = torch.sum(x, dim = 1) - 1  # penalize when > 1
     sum_part = smoothed_relu(sum_constraint, sigma*torch.sqrt(p))
 
     return neg_part + sum_part

@@ -1,5 +1,4 @@
 import torch
-import math
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
@@ -24,8 +23,6 @@ def loss_wrapper(core_fn, reduction = "mean"):
 
         if reduction == "mean":
             return losses.mean()
-        elif reduction == "sum":
-            return losses.sum()
         elif reduction == "none":
             return losses
         else:
@@ -34,34 +31,101 @@ def loss_wrapper(core_fn, reduction = "mean"):
     return wrapped
 
 class LossFunctionWrapper:
-    def __init__(self, loss_fn, reduction="mean"):
+    def __init__(self, loss_fn, reduction="mean", gradient_fn = None, hessian_fn = None):
         """
+        A wrapper for loss function evaluation with optional manual gradient/Hessian computation.
+
         Args:
-            loss_fn: Callable with signature loss(x, param)
-            reduction: "mean", "sum", or "none"
+            loss_fn (callable): Function loss(x, param) → shape (n,)
+            gradient_fn (callable, optional): grad(x, param, reduction) → shape (n, p) or (1, p)
+            hessian_fn (callable, optional): hess(x, param, reduction) → shape (n, p, p) or (1, p, p)
+            reduction (str): "mean" or "none"
         """
         self.loss_fn = loss_fn
+        self.gradient_fn = gradient_fn
+        self.hessian_fn = hessian_fn
         self.reduction = reduction
 
-    def evaluate(self, x, param, reduction="mean"):
-        """Compute the loss value."""
-        reduction = reduction or self.reduction
-        loss = loss_wrapper(self.loss_fn, reduction = reduction)
-        return loss(x, param, reduction=reduction)
+    def evaluate(self, x, param, reduction=None):
+        """
+        Evaluate the loss function on input x.
 
-    def gradient(self, x, param):
-        """Compute the gradient of the loss at x with respect to x."""
-        x = x.detach().clone().requires_grad_(True)
-        loss = self.loss_fn(x, param)
-        loss.backward()
-        return x.grad
+        Args:
+            x (Tensor): Input of shape (n, p) or (p,)
+            param (float or Tensor): Additional parameter to the loss function
+            reduction (str, optional): Overrides default reduction ("mean" or "none")
 
-    def hessian(self, x, param):
-        """Compute the Hessian of the loss at x with respect to x."""
-        return torch.autograd.functional.hessian(
-            lambda x_: self.loss_fn(x_, param),
-            x
-        )
+        Returns:
+            Tensor: Scalar if reduction == "mean", otherwise tensor of shape (n,)
+        """
+        reduction = reduction if reduction is not None else self.reduction 
+        loss_fn = loss_wrapper(self.loss_fn, reduction = reduction)
+        return loss_fn(x, param, reduction = reduction)
+
+    def gradient(self, x, param, reduction=None):
+        """
+        Compute the gradient of the loss function with respect to x.
+
+        Args:
+            x (Tensor): Input of shape (n, p) or (p,)
+            param (float or Tensor): Additional parameter to the loss function
+            reduction (str, optional): Overrides default reduction
+
+        Returns:
+            Tensor:
+                - shape (1, p) if reduction == "mean"
+                - shape (n, p) if reduction == "none"
+        """
+        if x.ndim == 1:
+            x = x.unsqueeze(0)  # Converts shape (p,) → (1, p)
+
+        reduction = reduction if reduction is not None else self.reduction
+        
+        if self.gradient_fn is not None:
+            return self.gradient_fn(x, param, reduction)
+        
+        def scalar_loss(xi):
+            return loss_wrapper(self.loss_fn, reduction="mean")(xi.unsqueeze(0), param)
+
+        grad_fn = torch.func.grad(scalar_loss)
+        gradient = torch.vmap(grad_fn)(x)
+
+        if reduction == "mean":
+            return gradient.mean(dim = 0, keepdim = True)
+        else:
+            return gradient
+
+    def hessian(self, x, param, reduction=None):
+        """
+        Compute the Hessian of the loss with respect to x.
+
+        Args:
+            x (Tensor): Input of shape (n, p) or (p,)
+            param (float or Tensor): Additional parameter to the loss function
+            reduction (str, optional): Overrides default reduction
+
+        Returns:
+            Tensor:
+                - shape (1, p, p) if reduction == "mean"
+                - shape (n, p, p) if reduction == "none"
+        """
+        if x.ndim == 1:
+            x = x.unsqueeze(0)  # Converts shape (p,) → (1, p)
+        reduction = reduction if reduction is not None else self.reduction
+        
+        if self.hessian_fn is not None:
+            return self.hessian_fn(x, param, reduction)
+        
+        def scalar_loss(xi):
+            return loss_wrapper(self.loss_fn, reduction="mean")(xi.unsqueeze(0), param)
+
+        hess_fn = torch.func.hessian(scalar_loss)  # returns (p, p) Hessian per sample
+        hessians = torch.vmap(hess_fn)(x)     # shape (n, p, p)
+        
+        if reduction == "mean":
+            return hessians.mean(dim=0, keepdim = True)  # shape (p, p)
+        else:
+            return hessians  # shape (n, p, p)
         
 
 
