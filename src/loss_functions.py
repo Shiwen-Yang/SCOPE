@@ -5,51 +5,54 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
 
-def loss_wrapper(core_fn):
-    def wrapped(x, param=None, reduction="mean"):
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
 
-        device = x.device
-        dtype = x.dtype
 
-        if param is None:
-            param = 1.0
-        if not isinstance(param, torch.Tensor):
-            param = torch.tensor(param, dtype=dtype, device=device)
-        else:
-            param = param.to(device=device, dtype=dtype)
+def smoothed_relu(z, sigma):
+    """
+    Smooth approximation of ReLU using Gaussian mollifier.
 
-        losses = core_fn(x, param)  # must return shape (n,)
+    Args:
+        z: tensor
+        sigma: smoothing parameter (scalar or tensor broadcastable to z)
 
-        if reduction == "mean":
-            return losses.mean()
-        elif reduction == "sum":
-            return losses.sum()
-        elif reduction == "none":
-            return losses
-        else:
-            raise ValueError(f"Invalid reduction: {reduction}")
+    Returns:
+        Smoothed ReLU approximation, same shape as z
+    """
+    sqrt_2 = math.sqrt(2)
+    sqrt_2pi = math.sqrt(2 * math.pi)
 
-    return wrapped
+    scaled = z / sigma
+    phi = torch.exp(-0.5 * scaled**2) / sqrt_2pi
+    Phi = 0.5 * (1 + torch.erf(scaled / sqrt_2))
 
-def smoothed_simplex_core(x, sigma):
+    return sigma * phi + z * Phi
+
+def mollified_relu_simplex_core(x, sigma):
+    """
+    Smooth version of the ReLU simplex loss using smoothed ReLU.
+
+    Args:
+        x: (n, p) tensor
+        sigma: smoothing parameter (float or tensor)
+
+    Returns:
+        Tensor of shape (n,) with smoothed loss values
+    """
+    if x.ndim == 1:
+        x = x.unsqueeze(0)
+    
     n, p = x.shape
-    sigma1 = sigma
-    sigma2 = sigma * math.sqrt(p)
+    sigma = torch.as_tensor(sigma, dtype=x.dtype, device=x.device)
+    p = torch.tensor(p, device=x.device)
+    
+    # Negative entries penalty
+    neg_part = smoothed_relu(-x, sigma).sum(dim=1)
 
-    def psi(z, s):
-        scaled = z / s
-        normal = torch.distributions.Normal(loc=0.0, scale=1.0)
-        phi = normal.log_prob(-scaled).exp()
-        Phi = normal.cdf(-scaled)
-        return s * phi + z * (1 - Phi)
+    # Sum constraint penalty
+    sum_constraint = torch.sum(x) - 1  # penalize when > 1
+    sum_part = smoothed_relu(sum_constraint, sigma*torch.sqrt(p))
 
-    neg_part = psi(-x, sigma1).sum(dim=1)
-    sum_constraint = x.sum(dim=1) - 1
-    sum_part = psi(sum_constraint, sigma2)
-
-    return neg_part + sum_part  # shape (n,)
+    return neg_part + sum_part
 
 def quadratic_sum_penalty_core(x, rho):
     norm_squared = torch.sum(x**2, dim=1)
@@ -71,3 +74,6 @@ def relu_simplex_core(x, _param=None):
     sum_constraint = x.sum(dim=1) - 1
     sum_part = torch.relu(sum_constraint)                # penalize sum > 1
     return neg_part + sum_part                           # shape (n,)
+
+
+

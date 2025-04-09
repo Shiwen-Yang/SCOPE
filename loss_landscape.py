@@ -12,7 +12,7 @@ torch.manual_seed(5)
 dir = Dirichlet(alpha)
 X = dir.sample((n // K,)).transpose(0, 1).reshape(n, p)[:, :2]
 
-smoothed_simplex_loss = LF.loss_wrapper(LF.smoothed_simplex_core)
+smoothed_simplex_loss = LF.loss_wrapper(LF.mollified_relu_simplex_core)
 quadratic_sum_penalty_loss = LF.loss_wrapper(LF.quadratic_sum_penalty_core)
 relu_simplex_loss = LF.loss_wrapper(LF.relu_simplex_core)
        

@@ -4,11 +4,40 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
+
+def loss_wrapper(core_fn, reduction = "mean"):
+    def wrapped(x, param=None, reduction= reduction):
+        if x.ndim == 1:
+            x = x.unsqueeze(0)
+
+        device = x.device
+        dtype = x.dtype
+
+        if param is None:
+            param = 1.0
+        if not isinstance(param, torch.Tensor):
+            param = torch.tensor(param, dtype=dtype, device=device)
+        else:
+            param = param.to(device=device, dtype=dtype)
+
+        losses = core_fn(x, param)  # must return shape (n,)
+
+        if reduction == "mean":
+            return losses.mean()
+        elif reduction == "sum":
+            return losses.sum()
+        elif reduction == "none":
+            return losses
+        else:
+            raise ValueError(f"Invalid reduction: {reduction}")
+
+    return wrapped
+
 class LossFunctionWrapper:
     def __init__(self, loss_fn, reduction="mean"):
         """
         Args:
-            loss_fn: Callable with signature loss(x, param, reduction)
+            loss_fn: Callable with signature loss(x, param)
             reduction: "mean", "sum", or "none"
         """
         self.loss_fn = loss_fn
@@ -17,19 +46,20 @@ class LossFunctionWrapper:
     def evaluate(self, x, param, reduction="mean"):
         """Compute the loss value."""
         reduction = reduction or self.reduction
-        return self.loss_fn(x, param, reduction=reduction)
+        loss = loss_wrapper(self.loss_fn, reduction = reduction)
+        return loss(x, param, reduction=reduction)
 
     def gradient(self, x, param):
         """Compute the gradient of the loss at x with respect to x."""
         x = x.detach().clone().requires_grad_(True)
-        loss = self.loss_fn(x, param, reduction="mean")
+        loss = self.loss_fn(x, param)
         loss.backward()
         return x.grad
 
     def hessian(self, x, param):
         """Compute the Hessian of the loss at x with respect to x."""
         return torch.autograd.functional.hessian(
-            lambda x_: self.loss_fn(x_, param, reduction="mean"),
+            lambda x_: self.loss_fn(x_, param),
             x
         )
         
