@@ -26,7 +26,7 @@ if __name__ == "__main__":
     explorer = LossExplorer(
         data=X,
         # loss_fn=smoothed_simplex_loss,
-        loss_fn=quadratic_sum_penalty_loss,
+        loss_fn=smoothed_simplex_loss,
         param_vals=param_vals,
         param_label=r"$\sigma$"
     )
