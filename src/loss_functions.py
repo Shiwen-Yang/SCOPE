@@ -1,9 +1,6 @@
 import torch
 import math
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
-
+from torch.distributions import Normal
 
 
 def smoothed_relu(z, sigma):
@@ -76,3 +73,67 @@ def relu_simplex_core(x, _param=None):
 
 
 
+
+def mollified_relu_grad(Y, sigma=0.02, reduction = None):
+    """
+    Compute gradient of mollified ReLU loss w.r.t. Y.
+    Y: (N x p), sigma: scalar
+    Returns: (N x p) gradient matrix
+    """
+    if Y.ndim == 1:
+        Y = Y.unsqueeze(dim = 0) # Converts shape (p, ) → (1, p)
+    normal = Normal(0, 1)
+    N, p = Y.shape
+
+    # Negative term gradient (for smoothed_relu(-x_j))
+    grad_neg = -normal.cdf(-Y / sigma)  # shape: (N x p)
+
+    # Sum constraint gradient (for smoothed_relu(sum(x) - 1))
+    w = Y.sum(dim=1, keepdim=True) - 1  # shape: (N x 1)
+    grad_sum = normal.cdf(w / (sigma * p**0.5))  # shape: (N x 1)
+    grad_sum_expanded = grad_sum.expand(-1, p)
+
+    gradient_val = grad_neg + grad_sum_expanded
+    
+    if reduction == "mean":
+        return gradient_val.mean(dim = 0, keepdim=True)
+    else:
+        return gradient_val
+
+
+def mollified_relu_hess(Y, sigma=0.02, reduction = None):
+    """
+    Compute batched Hessian of mollified ReLU simplex loss for a batch of inputs.
+
+    Args:
+        Y (Tensor): Input tensor of shape (n, p)
+        sigma (float): Smoothing parameter
+
+    Returns:
+        Tensor of shape (n, p, p): Hessians for each sample
+    """
+    if Y.ndim == 1:
+        Y = Y.unsqueeze(dim = 0) # Converts shape (p, ) → (1, p)
+    n, p = Y.shape
+    device = Y.device
+    dtype = Y.dtype
+    normal = Normal(0, 1)
+
+    # Diagonal term for negative entries
+    term_1_vals = normal.log_prob(-Y / sigma).exp() / sigma  # (n, p)
+    H_neg = torch.diag_embed(term_1_vals)  # (n, p, p)
+
+    # Rank-one outer product for sum constraint
+    sum_constraint = Y.sum(dim=1) - 1  # (n,)
+    scaling = math.sqrt(p) * sigma
+    term_2_vals = normal.log_prob(sum_constraint / scaling).exp() / scaling  # (n,)
+
+    ones = torch.ones((n, p, 1), device=device, dtype=dtype)
+    H_sum = term_2_vals.view(n, 1, 1) * torch.bmm(ones, ones.transpose(1, 2))  # (n, p, p)
+
+    hessian_val = H_neg + H_sum
+    
+    if reduction == "mean":
+        return hessian_val.mean(dim = 0, keepdim=True)
+    else:
+        return hessian_val
