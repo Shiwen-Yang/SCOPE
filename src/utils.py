@@ -307,25 +307,25 @@ class LossExplorer:
         # Caching
         self.cache = LossLandscapeCache(self)
 
-    def data_mean_and_cov(self):
-        """
-        Returns the empirical mean and covariance matrix of the data.
-        """
-        x = self.data  # (n, 2)
-        mean = x.mean(dim=0)
-        x_centered = x - mean
-        cov = (x_centered.T @ x_centered) / (x.shape[0] - 1)
-        return mean, cov
+    # def data_mean_and_cov(self):
+    #     """
+    #     Returns the empirical mean and covariance matrix of the data.
+    #     """
+    #     x = self.data  # (n, 2)
+    #     mean = x.mean(dim=0)
+    #     x_centered = x - mean
+    #     cov = (x_centered.T @ x_centered) / (x.shape[0] - 1)
+    #     return mean, cov
     
-    def rotated_mean_and_cov(self, theta):
-        """
-        Rotate the empirical mean and covariance by theta.
-        """
-        mean, cov = self.data_mean_and_cov()
-        R = self.rotator.get_rotation_matrix(theta)
-        rotated_mean = R @ mean
-        rotated_cov = R @ cov @ R.T
-        return rotated_mean, rotated_cov
+    # def rotated_mean_and_cov(self, theta):
+    #     """
+    #     Rotate the empirical mean and covariance by theta.
+    #     """
+    #     mean, cov = self.data_mean_and_cov()
+    #     R = self.rotator.get_rotation_matrix(theta)
+    #     rotated_mean = R @ mean
+    #     rotated_cov = R @ cov @ R.T
+    #     return rotated_mean, rotated_cov
     
     def rotate_data(self, theta):
         """
