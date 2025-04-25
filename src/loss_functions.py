@@ -137,3 +137,57 @@ def mollified_relu_hess(Y, sigma=0.02, reduction = None):
         return hessian_val.mean(dim = 0, keepdim=True)
     else:
         return hessian_val
+    
+    
+    
+    
+    
+def mollified_relu_nonneg_grad(Y, sigma=0.02, reduction = None):
+    """
+    Compute gradient of mollified ReLU loss w.r.t. Y.
+    Y: (N x p), sigma: scalar
+    Returns: (N x p) gradient matrix
+    """
+    if Y.ndim == 1:
+        Y = Y.unsqueeze(dim = 0) # Converts shape (p, ) → (1, p)
+    normal = Normal(0, 1)
+    N, p = Y.shape
+
+    # Negative term gradient (for smoothed_relu(-x_j))
+    grad_neg = -normal.cdf(-Y / sigma)  # shape: (N x p)
+
+
+    gradient_val = grad_neg
+    
+    if reduction == "mean":
+        return gradient_val.mean(dim = 0, keepdim=True)
+    else:
+        return gradient_val
+
+
+def mollified_relu_nonneg_hess(Y, sigma=0.02, reduction = None):
+    """
+    Compute batched Hessian of mollified ReLU simplex loss for a batch of inputs.
+
+    Args:
+        Y (Tensor): Input tensor of shape (n, p)
+        sigma (float): Smoothing parameter
+
+    Returns:
+        Tensor of shape (n, p, p): Hessians for each sample
+    """
+    if Y.ndim == 1:
+        Y = Y.unsqueeze(dim = 0) # Converts shape (p, ) → (1, p)
+        
+    normal = Normal(0, 1)
+
+    # Diagonal term for negative entries
+    term_1_vals = normal.log_prob(-Y / sigma).exp() / sigma  # (n, p)
+    H_neg = torch.diag_embed(term_1_vals)  # (n, p, p)
+
+    hessian_val = H_neg
+    
+    if reduction == "mean":
+        return hessian_val.mean(dim = 0, keepdim=True)
+    else:
+        return hessian_val
